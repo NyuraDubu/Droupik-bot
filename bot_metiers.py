@@ -214,10 +214,13 @@ class DashboardView(discord.ui.View):
             val = self.select.values[0]
             self.selected_filter = None if val == "__all" else val
             self.current_page = 0
-            # Met à jour la valeur sélectionnée dans le select pour la vue suivante
+            guild_id = interaction.guild.id if interaction.guild else None
+            if not guild_id:
+                await interaction.followup.send("Erreur : impossible de trouver la guilde.", ephemeral=True)
+                return
             await update_dashboard_message(
                 self.bot,
-                interaction.guild_id,
+                guild_id,
                 interaction.message,
                 self.current_page,
                 self.selected_filter
