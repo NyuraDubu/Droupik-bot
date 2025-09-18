@@ -274,10 +274,17 @@ async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter:
 
     return embed, total_pages
 
-async def update_dashboard_message(bot: commands.Bot, guild_id: int, message: discord.Message, page: int = 0, job_filter: str | None = None):
+async def update_dashboard_message(
+    bot: commands.Bot,
+    guild_id: int,
+    message: discord.Message,
+    page: int = 0,
+    job_filter: str | None = None
+):
     guild = bot.get_guild(guild_id)
-    embed, _ = await build_dashboard_embed(guild, page, job_filter)
-    await message.edit(embed=embed, view=DashboardView())
+    embed, total_pages = await build_dashboard_embed(guild, page, job_filter)
+    view = DashboardView(bot, guild_id, total_pages, page, job_filter)
+    await message.edit(embed=embed, view=view)
 
 class MetiersBot(commands.Bot):
     def __init__(self):
