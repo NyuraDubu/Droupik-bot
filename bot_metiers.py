@@ -7,6 +7,8 @@ from discord import app_commands
 from typing import List
 from discord.ext import commands
 from dotenv import load_dotenv
+import re
+
 load_dotenv()
 
 GUILD_ROLES_CAN_EDIT_OTHERS = {"Lead", "Murmureur"}
@@ -18,6 +20,8 @@ EMOJI_BY_METIER = {
     "forgeron": "🔵", "forgemage": "🔴", "façonneur": "🔵", "façomage": "🔴", "sculpteur": "🔵", "sculptemage": "🔴", "bricoleur": "🔵"
 }
 ACCENT_MAP = {"é":"e","è":"e","ê":"e","à":"a","ù":"u","ô":"o","û":"u","î":"i","ï":"i","ç":"c","ä":"a","ë":"e","ö":"o","ü":"u"}
+PAGE_RE = re.compile(r"Page\s+(\d+)\s*/\s*(\d+)", re.I)
+FILTER_RE = re.compile(r"•\s*Filtre:\s*(.+)$")
 
 def norm(s: str) -> str:
     s = s.lower().strip()
@@ -146,56 +150,87 @@ class DB:
 
 db = DB()
 
-class DashboardView(discord.ui.View):
-    def __init__(self, bot: commands.Bot, guild_id: int, total_pages: int, current_page: int = 0, selected_filter: str | None = None):
-        super().__init__(timeout=None)
-        self.bot = bot
-        self.guild_id = guild_id
-        self.total_pages = max(1, total_pages)
-        self.current_page = max(0, min(current_page, self.total_pages - 1))
-        self.selected_filter = selected_filter
+def parse_state_from_embed(embed: discord.Embed):
+    page_idx, total_pages, job_filter = 0, 1, None
+    if embed and embed.description:
+        m = PAGE_RE.search(embed.description)
+        if m:
+            try:
+                page_idx = max(0, int(m.group(1)) - 1)
+                total_pages = max(1, int(m.group(2)))
+            except ValueError:
+                pass
+    if embed and embed.title:
+        m = FILTER_RE.search(embed.title)
+        if m:
+            job_filter = norm(m.group(1).strip())
+    return page_idx, total_pages, job_filter
 
-        self.prev_btn = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.secondary)
-        self.next_btn = discord.ui.Button(emoji="▶️", style=discord.ButtonStyle.secondary)
-        self.refresh_btn = discord.ui.Button(emoji="🔄", style=discord.ButtonStyle.secondary)
+async def update_dashboard_for_message(interaction: discord.Interaction, page: int, job_filter: str | None):
+    guild = interaction.guild
+    embed, _ = await build_dashboard_embed(guild, page, job_filter)
+    await interaction.message.edit(embed=embed, view=DashboardView())
+
+class DashboardView(discord.ui.View):
+    def __init__(self):
+        # PERSISTANT
+        super().__init__(timeout=None)
+
+        # Boutons avec custom_id fixes
+        self.prev_btn = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.secondary, custom_id="dash_prev")
+        self.refresh_btn = discord.ui.Button(emoji="🔄", style=discord.ButtonStyle.secondary, custom_id="dash_refresh")
+        self.next_btn = discord.ui.Button(emoji="▶️", style=discord.ButtonStyle.secondary, custom_id="dash_next")
         self.add_item(self.prev_btn); self.add_item(self.refresh_btn); self.add_item(self.next_btn)
 
+        # Select persistant
         options = [discord.SelectOption(label="Tous les métiers", value="__all")]
-        metiers = sorted({m for m in EMOJI_BY_METIER.keys()})
         seen = set()
-        for m in metiers:
-            base = m.replace("û","u").replace("â","a")
-            if base in seen:
+        for raw in sorted(EMOJI_BY_METIER.keys()):
+            v = norm(raw)
+            if v in seen: 
                 continue
-            seen.add(base)
-            options.append(discord.SelectOption(label=m.capitalize(), value=norm(m), emoji=EMOJI_BY_METIER.get(m,"🛠️")))
-        self.select = discord.ui.Select(placeholder="Filtrer par métier…", min_values=1, max_values=1, options=options)
+            seen.add(v)
+            options.append(discord.SelectOption(label=raw.capitalize(), value=v, emoji=EMOJI_BY_METIER.get(raw, "🛠️")))
+        self.select = discord.ui.Select(placeholder="Filtrer par métier…", min_values=1, max_values=1,
+                                        options=options, custom_id="dash_filter")
         self.add_item(self.select)
 
+        # === Callbacks ===
         @self.prev_btn.callback
         async def prev_callback(interaction: discord.Interaction):
-            await interaction.response.defer()
-            self.current_page = (self.current_page - 1) % self.total_pages
-            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
+            try: await interaction.response.defer()
+            except: pass
+            emb = interaction.message.embeds[0] if interaction.message.embeds else None
+            page, total, jf = parse_state_from_embed(emb)
+            if total <= 0: total = 1
+            page = (page - 1) % total
+            await update_dashboard_for_message(interaction, page, jf)
 
         @self.next_btn.callback
         async def next_callback(interaction: discord.Interaction):
-            await interaction.response.defer()
-            self.current_page = (self.current_page + 1) % self.total_pages
-            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
+            try: await interaction.response.defer()
+            except: pass
+            emb = interaction.message.embeds[0] if interaction.message.embeds else None
+            page, total, jf = parse_state_from_embed(emb)
+            if total <= 0: total = 1
+            page = (page + 1) % total
+            await update_dashboard_for_message(interaction, page, jf)
 
         @self.refresh_btn.callback
         async def refresh_callback(interaction: discord.Interaction):
-            await interaction.response.defer()
-            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
+            try: await interaction.response.defer()
+            except: pass
+            emb = interaction.message.embeds[0] if interaction.message.embeds else None
+            page, _, jf = parse_state_from_embed(emb)
+            await update_dashboard_for_message(interaction, page, jf)
 
         @self.select.callback
         async def select_callback(interaction: discord.Interaction):
-            await interaction.response.defer()
+            try: await interaction.response.defer()
+            except: pass
             val = self.select.values[0]
-            self.selected_filter = None if val == "__all" else val
-            self.current_page = 0
-            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
+            jf = None if val == "__all" else val  # déjà normalisé
+            await update_dashboard_for_message(interaction, page=0, job_filter=jf)
 
 async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter: str | None = None):
     roster = await db.roster(guild.id)
@@ -239,17 +274,10 @@ async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter:
 
     return embed, total_pages
 
-async def update_dashboard_message(
-    bot: commands.Bot,
-    guild_id: int,
-    message: discord.Message,
-    page: int = 0,
-    job_filter: str | None = None
-):
+async def update_dashboard_message(bot: commands.Bot, guild_id: int, message: discord.Message, page: int = 0, job_filter: str | None = None):
     guild = bot.get_guild(guild_id)
-    embed, total_pages = await build_dashboard_embed(guild, page, job_filter)
-    view = DashboardView(bot, guild_id, total_pages, page, job_filter)
-    await message.edit(embed=embed, view=view)
+    embed, _ = await build_dashboard_embed(guild, page, job_filter)
+    await message.edit(embed=embed, view=DashboardView())
 
 class MetiersBot(commands.Bot):
     def __init__(self):
@@ -258,7 +286,7 @@ class MetiersBot(commands.Bot):
 
     async def setup_hook(self):
         await db.setup()
-        # NOTE:
+        self.add_view(DashboardView())
 
     async def on_ready(self):
         if not self.synced:
@@ -313,8 +341,6 @@ async def profil_setname(interaction: discord.Interaction, pseudo_dofus: str):
             await update_dashboard_message(bot, interaction.guild_id, msg)
         except Exception:
             pass
-
-
 
 # Autocomplete pour les métiers valides (async def)
 async def metier_autocomplete(interaction: discord.Interaction, current: str):
