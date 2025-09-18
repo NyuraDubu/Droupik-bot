@@ -1,6 +1,6 @@
 import os
 import math
-import os
+import logging
 from functools import partial
 import asyncpg
 import discord
@@ -9,6 +9,10 @@ from typing import List
 from discord.ext import commands
 from dotenv import load_dotenv
 load_dotenv()
+
+# --- Logs ---
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("metiers")
 
 GUILD_ROLES_CAN_EDIT_OTHERS = {"Lead", "Murmureur"}
 DASHBOARD_TITLE = "⚒️ Métiers & Niveaux de la Guilde"
@@ -22,7 +26,8 @@ ACCENT_MAP = {"é":"e","è":"e","ê":"e","à":"a","ù":"u","ô":"o","û":"u","î
 
 def norm(s: str) -> str:
     s = s.lower().strip()
-    for a,b in ACCENT_MAP.items(): s = s.replace(a,b)
+    for a,b in ACCENT_MAP.items():
+        s = s.replace(a,b)
     return s
 
 def display_metier(name: str) -> str:
@@ -156,9 +161,10 @@ class DashboardView(discord.ui.View):
         self.current_page = max(0, min(current_page, self.total_pages - 1))
         self.selected_filter = selected_filter
 
-        self.prev_btn = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.secondary)
-        self.next_btn = discord.ui.Button(emoji="▶️", style=discord.ButtonStyle.secondary)
-        self.refresh_btn = discord.ui.Button(emoji="🔄", style=discord.ButtonStyle.secondary)
+        # --- Composants avec custom_id persistants ---
+        self.prev_btn = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.secondary, custom_id="metiers:prev")
+        self.next_btn = discord.ui.Button(emoji="▶️", style=discord.ButtonStyle.secondary, custom_id="metiers:next")
+        self.refresh_btn = discord.ui.Button(emoji="🔄", style=discord.ButtonStyle.secondary, custom_id="metiers:refresh")
         self.add_item(self.prev_btn); self.add_item(self.refresh_btn); self.add_item(self.next_btn)
 
         options = [discord.SelectOption(label="Tous les métiers", value="__all")]
@@ -170,7 +176,13 @@ class DashboardView(discord.ui.View):
                 continue
             seen.add(base)
             options.append(discord.SelectOption(label=m.capitalize(), value=norm(m), emoji=EMOJI_BY_METIER.get(m,"🛠️")))
-        self.select = discord.ui.Select(placeholder="Filtrer par métier…", min_values=1, max_values=1, options=options)
+        self.select = discord.ui.Select(
+            placeholder="Filtrer par métier…",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="metiers:filter"
+        )
         self.add_item(self.select)
 
         @self.prev_btn.callback
@@ -179,7 +191,7 @@ class DashboardView(discord.ui.View):
             self.current_page = (self.current_page - 1) % self.total_pages
             await update_dashboard_message(
                 self.bot,
-                interaction.guild_id,
+                interaction.guild or interaction.message.guild,
                 interaction.message,
                 self.current_page,
                 self.selected_filter
@@ -191,7 +203,7 @@ class DashboardView(discord.ui.View):
             self.current_page = (self.current_page + 1) % self.total_pages
             await update_dashboard_message(
                 self.bot,
-                interaction.guild_id,
+                interaction.guild or interaction.message.guild,
                 interaction.message,
                 self.current_page,
                 self.selected_filter
@@ -202,7 +214,7 @@ class DashboardView(discord.ui.View):
             await interaction.response.defer()
             await update_dashboard_message(
                 self.bot,
-                interaction.guild_id,
+                interaction.guild or interaction.message.guild,
                 interaction.message,
                 self.current_page,
                 self.selected_filter
@@ -214,17 +226,28 @@ class DashboardView(discord.ui.View):
             val = self.select.values[0]
             self.selected_filter = None if val == "__all" else val
             self.current_page = 0
-            guild_id = interaction.guild.id if interaction.guild else None
-            if not guild_id:
+            guild = interaction.guild or interaction.message.guild
+            if not guild:
                 await interaction.followup.send("Erreur : impossible de trouver la guilde.", ephemeral=True)
                 return
             await update_dashboard_message(
                 self.bot,
-                guild_id,
+                guild,
                 interaction.message,
                 self.current_page,
                 self.selected_filter
             )
+
+    async def on_error(self, error: Exception, item: discord.ui.Item, interaction: discord.Interaction):
+        # Capture les exceptions des callbacks de boutons/select
+        log.exception("Erreur dans DashboardView (%s): %s", getattr(item, 'custom_id', item), error)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(f"⚠️ Erreur UI: `{type(error).__name__}: {error}`", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"⚠️ Erreur UI: `{type(error).__name__}: {error}`", ephemeral=True)
+        except Exception:
+            pass
 
 async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter: str | None = None):
     roster = await db.roster(guild.id)
@@ -254,7 +277,7 @@ async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter:
         return embed, total_pages
 
     for user_id, dofus_name, jobs, avg in chunk:
-        member = guild.get_member(user_id)
+        member = guild.get_member(user_id) if guild else None
         name_line = member.display_name if member else f"Utilisateur {user_id}"
         if dofus_name:
             name_line += f" *(aka {dofus_name})*"
@@ -268,24 +291,43 @@ async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter:
 
     return embed, total_pages
 
+# --- Version robuste : accepte une Guild ou un ID, résout correctement, log + fallback ---
 async def update_dashboard_message(
     bot: commands.Bot,
-    guild_id: int,
+    guild_or_id: int | discord.Guild,
     message: discord.Message,
     page: int = 0,
     job_filter: str | None = None
 ):
-    guild = bot.get_guild(guild_id)
-    embed, total_pages = await build_dashboard_embed(guild, page, job_filter)
-    view = DashboardView(bot, guild_id, total_pages, page, job_filter)
-    # Synchronise la sélection du filtre dans le select
-    if view.selected_filter:
+    try:
+        guild: discord.Guild | None = guild_or_id if isinstance(guild_or_id, discord.Guild) else None
+        if guild is None:
+            guild = message.guild or bot.get_guild(guild_or_id)
+        if guild is None:
+            raise RuntimeError("Guild introuvable (ni via message.guild, ni via bot.get_guild).")
+
+        embed, total_pages = await build_dashboard_embed(guild, page, job_filter)
+        view = DashboardView(bot, guild.id, total_pages, page, job_filter)
+
+        # Synchronise la sélection du filtre dans le select
         for i, opt in enumerate(view.select.options):
-            view.select.options[i].default = (opt.value == view.selected_filter)
-    else:
-        for i, opt in enumerate(view.select.options):
-            view.select.options[i].default = (opt.value == "__all")
-    await message.edit(embed=embed, view=view)
+            view.select.options[i].default = (
+                (view.selected_filter and opt.value == view.selected_filter) or
+                (not view.selected_filter and opt.value == "__all")
+            )
+
+        await message.edit(embed=embed, view=view)
+
+    except Exception as e:
+        log.exception("Erreur update_dashboard_message: %s", e)
+        try:
+            await message.edit(view=None)
+            await message.channel.send(
+                f"⚠️ Erreur lors de la mise à jour du dashboard : `{type(e).__name__}: {e}`",
+                delete_after=10
+            )
+        except Exception:
+            log.exception("Erreur secondaire en signalant l'erreur.")
 
 class MetiersBot(commands.Bot):
     def __init__(self):
@@ -294,7 +336,11 @@ class MetiersBot(commands.Bot):
 
     async def setup_hook(self):
         await db.setup()
-        # NOTE:
+        # View persistante pour que les composants continuent de répondre après un redémarrage (Railway)
+        try:
+            self.add_view(DashboardView(self, guild_id=0, total_pages=1, current_page=0, selected_filter=None))
+        except Exception as e:
+            log.exception("add_view persistante a échoué: %s", e)
 
     async def on_ready(self):
         if not self.synced:
@@ -303,6 +349,18 @@ class MetiersBot(commands.Bot):
         print(f"Connecté en tant que {self.user} (ID: {self.user.id})")
 
 bot = MetiersBot()
+
+# Handler global des erreurs de slash commands (utile pour diagnostiquer en prod Railway)
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: Exception):
+    log.exception("Erreur app command: %s", error)
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(f"⚠️ Erreur: `{type(error).__name__}: {error}`", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"⚠️ Erreur: `{type(error).__name__}: {error}`", ephemeral=True)
+    except Exception:
+        pass
 
 def can_edit_others(member: discord.Member) -> bool:
     return any(r.name in GUILD_ROLES_CAN_EDIT_OTHERS for r in member.roles)
@@ -328,7 +386,8 @@ async def dashboard(interaction: discord.Interaction, action: str | None = "setc
             msg = await ch.fetch_message(msg_id)
             await msg.edit(embed=embed, view=view)
             posted = msg
-        except Exception:
+        except Exception as e:
+            log.info("Impossible de réutiliser l'ancien message: %s", e)
             posted = None
 
     if not posted:
@@ -346,10 +405,9 @@ async def profil_setname(interaction: discord.Interaction, pseudo_dofus: str):
         try:
             ch = interaction.guild.get_channel(ch_id) or await interaction.guild.fetch_channel(ch_id)
             msg = await ch.fetch_message(msg_id)
-            await update_dashboard_message(bot, interaction.guild_id, msg)
-        except Exception:
-            pass
-
+            await update_dashboard_message(bot, interaction.guild, msg)  # ← passe la Guild
+        except Exception as e:
+            log.info("Refresh dashboard après profil_setname a échoué: %s", e)
 
 # Liste des choix de métiers pour les menus déroulants
 METIER_CHOICES = [
@@ -381,10 +439,9 @@ async def metier_set(
         try:
             ch = interaction.guild.get_channel(ch_id) or await interaction.guild.fetch_channel(ch_id)
             msg = await ch.fetch_message(msg_id)
-            await update_dashboard_message(bot, interaction.guild_id, msg)
-        except Exception:
-            pass
-
+            await update_dashboard_message(bot, interaction.guild, msg)  # ← passe la Guild
+        except Exception as e:
+            log.info("Refresh dashboard après metier_set a échoué: %s", e)
 
 @bot.tree.command(description="Retirer un métier (ex: /metier_remove paysan).")
 @app_commands.describe(metier="Choisis un métier dans la liste")
@@ -409,9 +466,9 @@ async def metier_remove(
         try:
             ch = interaction.guild.get_channel(ch_id) or await interaction.guild.fetch_channel(ch_id)
             msg = await ch.fetch_message(msg_id)
-            await update_dashboard_message(bot, interaction.guild_id, msg)
-        except Exception:
-            pass
+            await update_dashboard_message(bot, interaction.guild, msg)  # ← passe la Guild
+        except Exception as e:
+            log.info("Refresh dashboard après metier_remove a échoué: %s", e)
 
 @bot.tree.command(description="Afficher la fiche métiers d'un membre.")
 async def metier_list(interaction: discord.Interaction, membre: discord.Member | None = None):
@@ -438,8 +495,13 @@ async def dashboard_refresh(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     ch = interaction.guild.get_channel(ch_id) or await interaction.guild.fetch_channel(ch_id)
     msg = await ch.fetch_message(msg_id)
-    await update_dashboard_message(bot, interaction.guild_id, msg)
+    await update_dashboard_message(bot, interaction.guild, msg)  # ← passe la Guild
     await interaction.followup.send("Dashboard rafraîchi.", ephemeral=True)
 
 TOKEN = os.getenv("DISCORD_TOKEN") or "PUT_TOKEN_HERE"
+# Sanity log (ne pas afficher tout le token)
+t = os.getenv("DISCORD_TOKEN", "")
+print(f"[boot] token chargé: {('ok:'+t[:8]+'...') if t else 'ABSENT'}")
+print(f"[boot] DATABASE_URL présent: {'oui' if os.getenv('DATABASE_URL') else 'non'}")
+
 bot.run(TOKEN)
