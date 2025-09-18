@@ -4,6 +4,7 @@ import os
 import asyncpg
 import discord
 from discord import app_commands
+from typing import List
 from discord.ext import commands
 from dotenv import load_dotenv
 load_dotenv()
@@ -313,8 +314,19 @@ async def profil_setname(interaction: discord.Interaction, pseudo_dofus: str):
         except Exception:
             pass
 
+
+# Autocomplete pour les métiers valides
+@app_commands.autocomplete(metier=lambda interaction, current: [app_commands.Choice(name=m.capitalize(), value=m) for m in EMOJI_BY_METIER.keys() if current.lower() in m.lower()][:25])
 @bot.tree.command(description="Ajouter/mettre à jour un métier (ex: /metier_set paysan 200).")
-async def metier_set(interaction: discord.Interaction, metier: str, niveau: app_commands.Range[int, 1, 200], membre: discord.Member | None = None):
+async def metier_set(
+    interaction: discord.Interaction,
+    metier: str,
+    niveau: app_commands.Range[int, 1, 200],
+    membre: discord.Member | None = None
+):
+    metier_norm = norm(metier)
+    if metier_norm not in EMOJI_BY_METIER:
+        return await interaction.response.send_message("❌ Ce métier n'est pas reconnu. Choisis un métier valide dans la liste.", ephemeral=True)
     target = membre or interaction.user
     if membre and (target.id != interaction.user.id) and not can_edit_others(interaction.user):
         return await interaction.response.send_message("Tu ne peux modifier que **tes** métiers.", ephemeral=True)
@@ -331,8 +343,17 @@ async def metier_set(interaction: discord.Interaction, metier: str, niveau: app_
         except Exception:
             pass
 
+
+@app_commands.autocomplete(metier=lambda interaction, current: [app_commands.Choice(name=m.capitalize(), value=m) for m in EMOJI_BY_METIER.keys() if current.lower() in m.lower()][:25])
 @bot.tree.command(description="Retirer un métier (ex: /metier_remove paysan).")
-async def metier_remove(interaction: discord.Interaction, metier: str, membre: discord.Member | None = None):
+async def metier_remove(
+    interaction: discord.Interaction,
+    metier: str,
+    membre: discord.Member | None = None
+):
+    metier_norm = norm(metier)
+    if metier_norm not in EMOJI_BY_METIER:
+        return await interaction.response.send_message("❌ Ce métier n'est pas reconnu. Choisis un métier valide dans la liste.", ephemeral=True)
     target = membre or interaction.user
     if membre and (target.id != interaction.user.id) and not can_edit_others(interaction.user):
         return await interaction.response.send_message("Tu ne peux modifier que **tes** métiers.", ephemeral=True)
