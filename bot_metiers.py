@@ -17,11 +17,21 @@ log = logging.getLogger("metiers")
 GUILD_ROLES_CAN_EDIT_OTHERS = {"Lead", "Murmureur"}
 DASHBOARD_TITLE = "⚒️ Métiers & Niveaux de la Guilde"
 CARDS_PER_PAGE = 6  # nb de cartes par page
+def norm(s: str) -> str:
+    s = s.lower().strip()
+    for a,b in ACCENT_MAP.items():
+        s = s.replace(a,b)
+    return s
+
+ACCENT_MAP = {"é":"e","è":"e","ê":"e","à":"a","ù":"u","ô":"o","û":"u","î":"i","ï":"i","ç":"c","ä":"a","ë":"e","ö":"o","ü":"u"}
+
 _EMOJI_METIERS_RAW = [
     ("alchimiste", "🟢"), ("bûcheron", "🟢"), ("chasseur", "🟢"), ("mineur", "🟢"), ("paysan", "🟢"), ("pêcheur", "🟢"),
     ("bijoutier", "🔵"), ("joaillomage", "🔴"), ("cordonnier", "🔵"), ("cordomage", "🔴"), ("tailleur", "🔵"), ("costumage", "🔴"),
     ("forgeron", "🔵"), ("forgemage", "🔴"), ("façonneur", "🔵"), ("façomage", "🔴"), ("sculpteur", "🔵"), ("sculptemage", "🔴"), ("bricoleur", "🔵")
 ]
+EMOJI_BY_METIER = {norm(nom): emoji for nom, emoji in _EMOJI_METIERS_RAW}
+METIER_LABELS = [(nom, norm(nom)) for nom, _ in _EMOJI_METIERS_RAW]
 # Dictionnaire avec clés normalisées
 EMOJI_BY_METIER = {norm(nom): emoji for nom, emoji in _EMOJI_METIERS_RAW}
 # Pour affichage (label accentué -> clé normalisée)
