@@ -173,24 +173,40 @@ class DashboardView(discord.ui.View):
 
         @self.prev_btn.callback
         async def prev_callback(interaction: discord.Interaction):
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
             self.current_page = (self.current_page - 1) % self.total_pages
-            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter, via_interaction=interaction)
+            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
 
         @self.next_btn.callback
         async def next_callback(interaction: discord.Interaction):
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
             self.current_page = (self.current_page + 1) % self.total_pages
-            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter, via_interaction=interaction)
+            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
 
         @self.refresh_btn.callback
         async def refresh_callback(interaction: discord.Interaction):
-            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter, via_interaction=interaction, force_reload=True)
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
+            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
 
         @self.select.callback
         async def select_callback(interaction: discord.Interaction):
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
             val = self.select.values[0]
-            self.selected_filter = None if val == "__all" else val
+            self.selected_filter = None if val == "__all" else val  # val est déjà normalisée
             self.current_page = 0
-            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter, via_interaction=interaction)
+            await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
 
 async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter: str | None = None):
     roster = await db.roster(guild.id)
@@ -224,14 +240,17 @@ async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter:
 
     return embed, total_pages
 
-async def update_dashboard_message(bot: commands.Bot, guild_id: int, message: discord.Message, page: int = 0, job_filter: str | None = None, via_interaction: discord.Interaction | None = None, force_reload: bool=False):
+async def update_dashboard_message(
+    bot: commands.Bot,
+    guild_id: int,
+    message: discord.Message,
+    page: int = 0,
+    job_filter: str | None = None
+):
     guild = bot.get_guild(guild_id)
     embed, total_pages = await build_dashboard_embed(guild, page, job_filter)
     view = DashboardView(bot, guild_id, total_pages, page, job_filter)
-    if via_interaction:
-        await via_interaction.response.edit_message(embed=embed, view=view)
-    else:
-        await message.edit(embed=embed, view=view)
+    await message.edit(embed=embed, view=view)
 
 class MetiersBot(commands.Bot):
     def __init__(self):
