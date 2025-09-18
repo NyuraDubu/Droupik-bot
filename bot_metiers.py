@@ -17,11 +17,15 @@ log = logging.getLogger("metiers")
 GUILD_ROLES_CAN_EDIT_OTHERS = {"Lead", "Murmureur"}
 DASHBOARD_TITLE = "⚒️ Métiers & Niveaux de la Guilde"
 CARDS_PER_PAGE = 6  # nb de cartes par page
-EMOJI_BY_METIER = {
-    "alchimiste": "🟢", "bûcheron": "🟢", "chasseur": "🟢", "mineur": "🟢", "paysan": "🟢", "pêcheur": "🟢",
-    "bijoutier": "🔵", "joaillomage": "🔴", "cordonnier": "🔵", "cordomage": "🔴", "tailleur": "🔵", "costumage": "🔴",
-    "forgeron": "🔵", "forgemage": "🔴", "façonneur": "🔵", "façomage": "🔴", "sculpteur": "🔵", "sculptemage": "🔴", "bricoleur": "🔵"
-}
+_EMOJI_METIERS_RAW = [
+    ("alchimiste", "🟢"), ("bûcheron", "🟢"), ("chasseur", "🟢"), ("mineur", "🟢"), ("paysan", "🟢"), ("pêcheur", "🟢"),
+    ("bijoutier", "🔵"), ("joaillomage", "🔴"), ("cordonnier", "🔵"), ("cordomage", "🔴"), ("tailleur", "🔵"), ("costumage", "🔴"),
+    ("forgeron", "🔵"), ("forgemage", "🔴"), ("façonneur", "🔵"), ("façomage", "🔴"), ("sculpteur", "🔵"), ("sculptemage", "🔴"), ("bricoleur", "🔵")
+]
+# Dictionnaire avec clés normalisées
+EMOJI_BY_METIER = {norm(nom): emoji for nom, emoji in _EMOJI_METIERS_RAW}
+# Pour affichage (label accentué -> clé normalisée)
+METIER_LABELS = [(nom, norm(nom)) for nom, _ in _EMOJI_METIERS_RAW]
 ACCENT_MAP = {"é":"e","è":"e","ê":"e","à":"a","ù":"u","ô":"o","û":"u","î":"i","ï":"i","ç":"c","ä":"a","ë":"e","ö":"o","ü":"u"}
 
 def norm(s: str) -> str:
@@ -200,9 +204,8 @@ class DashboardView(discord.ui.View):
         min_values=1,
         max_values=1,
         options=[discord.SelectOption(label="Tous les métiers", value="__all")] + [
-            discord.SelectOption(label=m.capitalize(), value=norm(m), emoji=EMOJI_BY_METIER.get(m,"🛠️"))
-            for m in sorted({m for m in EMOJI_BY_METIER.keys()})
-            if m.replace("û","u").replace("â","a") not in set()
+            discord.SelectOption(label=label.capitalize(), value=normed, emoji=EMOJI_BY_METIER.get(normed,"🛠️"))
+            for label, normed in METIER_LABELS
         ],
         custom_id="metiers:filter"
     )
