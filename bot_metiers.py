@@ -1,6 +1,7 @@
 import os
 import math
 import os
+from functools import partial
 import asyncpg
 import discord
 from discord import app_commands
@@ -346,16 +347,16 @@ async def profil_setname(interaction: discord.Interaction, pseudo_dofus: str):
         except Exception:
             pass
 
-# Autocomplete pour les métiers valides (async def)
-async def metier_autocomplete(interaction: discord.Interaction, current: str):
-    return [
-        app_commands.Choice(name=m.capitalize(), value=m)
-        for m in EMOJI_BY_METIER.keys()
-        if current.lower() in m.lower()
-    ][:25]
 
-@app_commands.autocomplete(metier=metier_autocomplete)
+# Liste des choix de métiers pour les menus déroulants
+METIER_CHOICES = [
+    app_commands.Choice(name=m.capitalize(), value=m)
+    for m in sorted(EMOJI_BY_METIER.keys())
+]
+
 @bot.tree.command(description="Ajouter/mettre à jour un métier (ex: /metier_set paysan 200).")
+@app_commands.describe(metier="Choisis un métier dans la liste")
+@app_commands.choices(metier=METIER_CHOICES)
 async def metier_set(
     interaction: discord.Interaction,
     metier: str,
@@ -382,8 +383,9 @@ async def metier_set(
             pass
 
 
-@app_commands.autocomplete(metier=metier_autocomplete)
 @bot.tree.command(description="Retirer un métier (ex: /metier_remove paysan).")
+@app_commands.describe(metier="Choisis un métier dans la liste")
+@app_commands.choices(metier=METIER_CHOICES)
 async def metier_remove(
     interaction: discord.Interaction,
     metier: str,
