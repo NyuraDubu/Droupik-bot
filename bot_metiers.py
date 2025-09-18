@@ -164,10 +164,10 @@ class DashboardView(discord.ui.View):
         seen = set()
         for m in metiers:
             base = m.replace("û","u").replace("â","a")
-            if base in seen: 
+            if base in seen:
                 continue
             seen.add(base)
-            options.append(discord.SelectOption(label=m.capitalize(), value=m, emoji=EMOJI_BY_METIER.get(m,"🛠️")))
+            options.append(discord.SelectOption(label=m.capitalize(), value=norm(m), emoji=EMOJI_BY_METIER.get(m,"🛠️")))
         self.select = discord.ui.Select(placeholder="Filtrer par métier…", min_values=1, max_values=1, options=options)
         self.add_item(self.select)
 
