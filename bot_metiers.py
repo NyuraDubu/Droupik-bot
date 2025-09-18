@@ -211,9 +211,14 @@ class DashboardView(discord.ui.View):
 async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter: str | None = None):
     roster = await db.roster(guild.id)
 
-    if job_filter:
-        job_filter_norm = norm(job_filter)
-        roster = [r for r in roster if any(norm(j)==job_filter_norm for j,_ in r[2])]
+    job_filter_norm = norm(job_filter) if job_filter else None
+    if job_filter_norm:
+        # Ne garder que les utilisateurs ayant ce métier
+        roster = [
+            (uid, name, [(j, lvl) for j, lvl in jobs if norm(j) == job_filter_norm], avg)
+            for uid, name, jobs, avg in roster
+            if any(norm(j) == job_filter_norm for j, _ in jobs)
+        ]
 
     total_pages = max(1, math.ceil(len(roster) / CARDS_PER_PAGE))
     page = max(0, min(page, total_pages - 1))
@@ -235,8 +240,13 @@ async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter:
         name_line = member.display_name if member else f"Utilisateur {user_id}"
         if dofus_name:
             name_line += f" *(aka {dofus_name})*"
-        lines = [f"{display_metier(j)} : **{lvl}**" for j, lvl in jobs]
-        embed.add_field(name=f"👤 {name_line}", value="\n".join(lines), inline=False)
+        # Si filtré, n'afficher que les métiers correspondants
+        if job_filter_norm:
+            lines = [f"{display_metier(j)} : **{lvl}**" for j, lvl in jobs if norm(j) == job_filter_norm]
+        else:
+            lines = [f"{display_metier(j)} : **{lvl}**" for j, lvl in jobs]
+        if lines:
+            embed.add_field(name=f"👤 {name_line}", value="\n".join(lines), inline=False)
 
     return embed, total_pages
 
