@@ -196,7 +196,8 @@ async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter:
     roster = await db.roster(guild.id)
 
     if job_filter:
-        roster = [r for r in roster if any(norm(j)==job_filter for j,_ in r[2])]
+        job_filter_norm = norm(job_filter)
+        roster = [r for r in roster if any(norm(j)==job_filter_norm for j,_ in r[2])]
 
     total_pages = max(1, math.ceil(len(roster) / CARDS_PER_PAGE))
     page = max(0, min(page, total_pages - 1))
