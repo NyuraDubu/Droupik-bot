@@ -205,19 +205,23 @@ class DashboardView(discord.ui.View):
 
         @self.prev_btn.callback
         async def prev_callback(interaction: discord.Interaction):
+            log.info("Interaction bouton PREV reçue par %s", interaction.user)
             await update(interaction, page=(self.current_page - 1) % self.total_pages)
 
         @self.next_btn.callback
         async def next_callback(interaction: discord.Interaction):
+            log.info("Interaction bouton NEXT reçue par %s", interaction.user)
             await update(interaction, page=(self.current_page + 1) % self.total_pages)
 
         @self.refresh_btn.callback
         async def refresh_callback(interaction: discord.Interaction):
+            log.info("Interaction bouton REFRESH reçue par %s", interaction.user)
             await update(interaction)
 
         @self.select.callback
         async def select_callback(interaction: discord.Interaction):
             val = self.select.values[0]
+            log.info("Interaction SELECT filtre reçue par %s : %s", interaction.user, val)
             await update(interaction, page=0, selected_filter=None if val == "__all" else val)
 
     async def on_error(self, error: Exception, item: discord.ui.Item, interaction: discord.Interaction):
@@ -329,6 +333,7 @@ class MetiersBot(commands.Bot):
         # View persistante pour que les composants continuent de répondre après un redémarrage (Railway)
         try:
             self.add_view(DashboardView(self, guild_id=0, total_pages=1, current_page=0, selected_filter=None))
+            log.info("View persistante DashboardView ajoutée (custom_id=metiers:*)")
         except Exception as e:
             log.exception("add_view persistante a échoué: %s", e)
 
