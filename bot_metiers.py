@@ -315,8 +315,16 @@ async def profil_setname(interaction: discord.Interaction, pseudo_dofus: str):
             pass
 
 
-# Autocomplete pour les métiers valides
-@app_commands.autocomplete(metier=lambda interaction, current: [app_commands.Choice(name=m.capitalize(), value=m) for m in EMOJI_BY_METIER.keys() if current.lower() in m.lower()][:25])
+
+# Autocomplete pour les métiers valides (async def)
+async def metier_autocomplete(interaction: discord.Interaction, current: str):
+    return [
+        app_commands.Choice(name=m.capitalize(), value=m)
+        for m in EMOJI_BY_METIER.keys()
+        if current.lower() in m.lower()
+    ][:25]
+
+@app_commands.autocomplete(metier=metier_autocomplete)
 @bot.tree.command(description="Ajouter/mettre à jour un métier (ex: /metier_set paysan 200).")
 async def metier_set(
     interaction: discord.Interaction,
@@ -344,7 +352,7 @@ async def metier_set(
             pass
 
 
-@app_commands.autocomplete(metier=lambda interaction, current: [app_commands.Choice(name=m.capitalize(), value=m) for m in EMOJI_BY_METIER.keys() if current.lower() in m.lower()][:25])
+@app_commands.autocomplete(metier=metier_autocomplete)
 @bot.tree.command(description="Retirer un métier (ex: /metier_remove paysan).")
 async def metier_remove(
     interaction: discord.Interaction,
