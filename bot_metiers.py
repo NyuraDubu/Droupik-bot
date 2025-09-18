@@ -173,36 +173,24 @@ class DashboardView(discord.ui.View):
 
         @self.prev_btn.callback
         async def prev_callback(interaction: discord.Interaction):
-            try:
-                await interaction.response.defer()
-            except Exception:
-                pass
+            await interaction.response.defer()
             self.current_page = (self.current_page - 1) % self.total_pages
             await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
 
         @self.next_btn.callback
         async def next_callback(interaction: discord.Interaction):
-            try:
-                await interaction.response.defer()
-            except Exception:
-                pass
+            await interaction.response.defer()
             self.current_page = (self.current_page + 1) % self.total_pages
             await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
 
         @self.refresh_btn.callback
         async def refresh_callback(interaction: discord.Interaction):
-            try:
-                await interaction.response.defer()
-            except Exception:
-                pass
+            await interaction.response.defer()
             await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
 
         @self.select.callback
         async def select_callback(interaction: discord.Interaction):
-            try:
-                await interaction.response.defer()
-            except Exception:
-                pass
+            await interaction.response.defer()
             val = self.select.values[0]
             self.selected_filter = None if val == "__all" else val
             self.current_page = 0
