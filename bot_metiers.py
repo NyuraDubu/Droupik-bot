@@ -185,44 +185,54 @@ class DashboardView(discord.ui.View):
         )
         self.add_item(self.select)
 
-        async def update(interaction: discord.Interaction, page=None, selected_filter=None):
-            await interaction.response.defer()
-            if page is not None:
-                self.current_page = page
-            if selected_filter is not None:
-                self.selected_filter = selected_filter
-            guild = interaction.guild or interaction.message.guild
-            if not guild:
-                await interaction.followup.send("Erreur : impossible de trouver la guilde.", ephemeral=True)
-                return
-            await update_dashboard_message(
-                self.bot,
-                guild,
-                interaction.message,
-                self.current_page,
-                self.selected_filter
-            )
+    async def update(self, interaction: discord.Interaction, page=None, selected_filter=None):
+        await interaction.response.defer()
+        if page is not None:
+            self.current_page = page
+        if selected_filter is not None:
+            self.selected_filter = selected_filter
+        guild = interaction.guild or interaction.message.guild
+        if not guild:
+            await interaction.followup.send("Erreur : impossible de trouver la guilde.", ephemeral=True)
+            return
+        await update_dashboard_message(
+            self.bot,
+            guild,
+            interaction.message,
+            self.current_page,
+            self.selected_filter
+        )
 
-        @self.prev_btn.callback
-        async def prev_callback(interaction: discord.Interaction):
-            log.info("Interaction bouton PREV reçue par %s", interaction.user)
-            await update(interaction, page=(self.current_page - 1) % self.total_pages)
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary, custom_id="metiers:prev")
+    async def prev_btn_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        log.info("Interaction bouton PREV reçue par %s", interaction.user)
+        await self.update(interaction, page=(self.current_page - 1) % self.total_pages)
 
-        @self.next_btn.callback
-        async def next_callback(interaction: discord.Interaction):
-            log.info("Interaction bouton NEXT reçue par %s", interaction.user)
-            await update(interaction, page=(self.current_page + 1) % self.total_pages)
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary, custom_id="metiers:next")
+    async def next_btn_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        log.info("Interaction bouton NEXT reçue par %s", interaction.user)
+        await self.update(interaction, page=(self.current_page + 1) % self.total_pages)
 
-        @self.refresh_btn.callback
-        async def refresh_callback(interaction: discord.Interaction):
-            log.info("Interaction bouton REFRESH reçue par %s", interaction.user)
-            await update(interaction)
+    @discord.ui.button(emoji="🔄", style=discord.ButtonStyle.secondary, custom_id="metiers:refresh")
+    async def refresh_btn_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        log.info("Interaction bouton REFRESH reçue par %s", interaction.user)
+        await self.update(interaction)
 
-        @self.select.callback
-        async def select_callback(interaction: discord.Interaction):
-            val = self.select.values[0]
-            log.info("Interaction SELECT filtre reçue par %s : %s", interaction.user, val)
-            await update(interaction, page=0, selected_filter=None if val == "__all" else val)
+    @discord.ui.select(
+        placeholder="Filtrer par métier…",
+        min_values=1,
+        max_values=1,
+        options=[discord.SelectOption(label="Tous les métiers", value="__all")] + [
+            discord.SelectOption(label=m.capitalize(), value=norm(m), emoji=EMOJI_BY_METIER.get(m,"🛠️"))
+            for m in sorted({m for m in EMOJI_BY_METIER.keys()})
+            if m.replace("û","u").replace("â","a") not in set()
+        ],
+        custom_id="metiers:filter"
+    )
+    async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
+        val = select.values[0]
+        log.info("Interaction SELECT filtre reçue par %s : %s", interaction.user, val)
+        await self.update(interaction, page=0, selected_filter=None if val == "__all" else val)
 
     async def on_error(self, error: Exception, item: discord.ui.Item, interaction: discord.Interaction):
         # Capture les exceptions des callbacks de boutons/select
