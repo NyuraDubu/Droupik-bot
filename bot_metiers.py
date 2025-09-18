@@ -290,12 +290,7 @@ async def update_dashboard_message(
         embed, total_pages = await build_dashboard_embed(guild, page, job_filter)
         view = DashboardView(bot, guild.id, total_pages, page, job_filter)
 
-        # Synchronise la sélection du filtre dans le select
-        for i, opt in enumerate(view.select.options):
-            view.select.options[i].default = (
-                (view.selected_filter and opt.value == view.selected_filter) or
-                (not view.selected_filter and opt.value == "__all")
-            )
+        # Plus besoin de synchroniser manuellement le select : Discord.py gère l'état sélectionné automatiquement
 
         await message.edit(embed=embed, view=view)
 
