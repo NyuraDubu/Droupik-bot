@@ -252,22 +252,30 @@ class DashboardView(discord.ui.View):
 async def build_dashboard_embed(guild: discord.Guild, page: int = 0, job_filter: str | None = None):
     roster = await db.roster(guild.id)
 
+
     job_filter_norm = norm(job_filter) if job_filter else None
+    filter_label = None
     if job_filter_norm:
+        # Trouver le label exact (avec emoji) pour le titre
+        for m in EMOJI_BY_METIER.keys():
+            if norm(m) == job_filter_norm:
+                filter_label = display_metier(m)
+                break
+        if not filter_label:
+            filter_label = job_filter.capitalize()
         # Ne garder que les utilisateurs ayant ce métier
         roster = [
             (uid, name, [(j, lvl) for j, lvl in jobs if norm(j) == job_filter_norm], avg)
             for uid, name, jobs, avg in roster
             if any(norm(j) == job_filter_norm for j, _ in jobs)
         ]
-
     total_pages = max(1, math.ceil(len(roster) / CARDS_PER_PAGE))
     page = max(0, min(page, total_pages - 1))
     start = page * CARDS_PER_PAGE
     chunk = roster[start:start + CARDS_PER_PAGE]
 
     embed = discord.Embed(
-        title=DASHBOARD_TITLE if not job_filter else f"{DASHBOARD_TITLE} • Filtre: {job_filter.capitalize()}",
+        title=DASHBOARD_TITLE if not job_filter_norm else f"{DASHBOARD_TITLE} • Filtre: {filter_label}",
         description=f"**{len(roster)}** profils • Page **{page+1}/{total_pages}**",
         color=discord.Color.purple()
     )
