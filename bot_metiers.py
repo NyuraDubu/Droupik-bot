@@ -1,7 +1,7 @@
 import os
 import math
-import asyncio
-import aiosqlite
+import os
+import asyncpg
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -12,9 +12,9 @@ GUILD_ROLES_CAN_EDIT_OTHERS = {"Lead", "Murmureur"}
 DASHBOARD_TITLE = "⚒️ Métiers & Niveaux de la Guilde"
 CARDS_PER_PAGE = 6  # nb de cartes par page
 EMOJI_BY_METIER = {
-    "alchimiste": "🌿", "bûcheron": "🌳", "chasseur": "🏹", "mineur": "⛏️", "paysan": "🌾", "pêcheur": "🎣",
-    "bijoutier": "💍", "joaillomage": "💎", "cordonnier": "👞", "cordomage": "🧵", "tailleur": "👕", "costumage": "🪡",
-    "forgeron": "⚒️", "forgemage": "🔧", "façonneur": "🛡️", "façomage": "🛡️", "sculpteur": "🪚", "sculptemage": "🪚", "bricoleur": "🧰"
+    "alchimiste": "🟢", "bûcheron": "🟢", "chasseur": "🟢", "mineur": "🟢", "paysan": "🟢", "pêcheur": "🟢",
+    "bijoutier": "🔵", "joaillomage": "🔴", "cordonnier": "🔵", "cordomage": "🔴", "tailleur": "🔵", "costumage": "🔴",
+    "forgeron": "🔵", "forgemage": "🔴", "façonneur": "🔵", "façomage": "🔴", "sculpteur": "🔵", "sculptemage": "🔴", "bricoleur": "🔵"
 }
 ACCENT_MAP = {"é":"e","è":"e","ê":"e","à":"a","ù":"u","ô":"o","û":"u","î":"i","ï":"i","ç":"c","ä":"a","ë":"e","ö":"o","ü":"u"}
 
@@ -35,106 +35,113 @@ INTENTS.members = True
 INTENTS.message_content = True
 
 class DB:
-    def __init__(self, path="metiers.db"):
-        self.path = path
+    def __init__(self, dsn: str | None = None):
+        self.dsn = dsn or os.getenv("DATABASE_URL")
+        if not self.dsn:
+            raise RuntimeError("DATABASE_URL manquante")
+        self.pool: asyncpg.Pool | None = None
+
     async def setup(self):
-        async with aiosqlite.connect(self.path) as db:
-            await db.execute("""
+        self.pool = await asyncpg.create_pool(self.dsn, min_size=1, max_size=5)
+        async with self.pool.acquire() as conn:
+            await conn.execute("""
             CREATE TABLE IF NOT EXISTS profiles(
-                guild_id INTEGER,
-                user_id INTEGER,
+                guild_id BIGINT NOT NULL,
+                user_id  BIGINT NOT NULL,
                 dofus_name TEXT,
                 PRIMARY KEY (guild_id, user_id)
-            )""")
-            await db.execute("""
+            );
             CREATE TABLE IF NOT EXISTS jobs(
-                guild_id INTEGER,
-                user_id INTEGER,
-                job_name TEXT,
-                level INTEGER,
+                guild_id BIGINT NOT NULL,
+                user_id  BIGINT NOT NULL,
+                job_name TEXT NOT NULL,
+                level    INT   NOT NULL,
                 PRIMARY KEY (guild_id, user_id, job_name)
-            )""")
-            await db.execute("""
+            );
             CREATE TABLE IF NOT EXISTS settings(
-                guild_id INTEGER PRIMARY KEY,
-                dashboard_channel_id INTEGER,
-                dashboard_message_id INTEGER
-            )""")
-            await db.commit()
+                guild_id BIGINT PRIMARY KEY,
+                dashboard_channel_id BIGINT,
+                dashboard_message_id BIGINT
+            );
+            """)
 
     async def set_profile_name(self, guild_id: int, user_id: int, name: str):
-        async with aiosqlite.connect(self.path) as db:
-            await db.execute("""INSERT INTO profiles(guild_id,user_id,dofus_name)
-                                VALUES(?,?,?)
-                                ON CONFLICT(guild_id,user_id) DO UPDATE SET dofus_name=excluded.dofus_name""",
-                             (guild_id,user_id,name))
-            await db.commit()
+        async with self.pool.acquire() as conn:
+            await conn.execute("""
+            INSERT INTO profiles(guild_id,user_id,dofus_name)
+            VALUES($1,$2,$3)
+            ON CONFLICT (guild_id,user_id) DO UPDATE SET dofus_name=EXCLUDED.dofus_name
+            """, guild_id, user_id, name)
 
-    async def get_profile_name(self, guild_id: int, user_id: int) -> str | None:
-        async with aiosqlite.connect(self.path) as db:
-            cur = await db.execute("SELECT dofus_name FROM profiles WHERE guild_id=? AND user_id=?",
-                                   (guild_id,user_id))
-            row = await cur.fetchone()
-            return row[0] if row else None
+    async def get_profile_name(self, guild_id: int, user_id: int):
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("""
+            SELECT dofus_name FROM profiles WHERE guild_id=$1 AND user_id=$2
+            """, guild_id, user_id)
+            return row["dofus_name"] if row else None
 
     async def set_job(self, guild_id: int, user_id: int, job: str, level: int):
         job = norm(job)
-        async with aiosqlite.connect(self.path) as db:
-            await db.execute("""INSERT INTO jobs(guild_id,user_id,job_name,level)
-                                VALUES(?,?,?,?)
-                                ON CONFLICT(guild_id,user_id,job_name) DO UPDATE SET level=excluded.level""",
-                             (guild_id,user_id,job,level))
-            await db.commit()
+        async with self.pool.acquire() as conn:
+            await conn.execute("""
+            INSERT INTO jobs(guild_id,user_id,job_name,level)
+            VALUES($1,$2,$3,$4)
+            ON CONFLICT (guild_id,user_id,job_name) DO UPDATE SET level=EXCLUDED.level
+            """, guild_id, user_id, job, level)
 
     async def remove_job(self, guild_id: int, user_id: int, job: str):
         job = norm(job)
-        async with aiosqlite.connect(self.path) as db:
-            await db.execute("DELETE FROM jobs WHERE guild_id=? AND user_id=? AND job_name=?",
-                             (guild_id,user_id,job))
-            await db.commit()
+        async with self.pool.acquire() as conn:
+            await conn.execute("""
+            DELETE FROM jobs WHERE guild_id=$1 AND user_id=$2 AND job_name=$3
+            """, guild_id, user_id, job)
 
     async def list_user_jobs(self, guild_id: int, user_id: int):
-        async with aiosqlite.connect(self.path) as db:
-            cur = await db.execute("SELECT job_name, level FROM jobs WHERE guild_id=? AND user_id=?",
-                                   (guild_id,user_id))
-            rows = await cur.fetchall()
-            return sorted(rows, key=lambda r: (-r[1], r[0]))
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+            SELECT job_name, level FROM jobs
+            WHERE guild_id=$1 AND user_id=$2
+            """, guild_id, user_id)
+            out = [(r["job_name"], r["level"]) for r in rows]
+            return sorted(out, key=lambda r: (-r[1], r[0]))
 
     async def roster(self, guild_id: int):
-        async with aiosqlite.connect(self.path) as db:
-            cur = await db.execute("""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
             SELECT j.user_id, p.dofus_name, j.job_name, j.level
             FROM jobs j
             LEFT JOIN profiles p ON p.guild_id=j.guild_id AND p.user_id=j.user_id
-            WHERE j.guild_id=?""", (guild_id,))
-            data = {}
-            async for user_id, dofus_name, job_name, level in cur:
-                lst = data.setdefault(user_id, {"name": dofus_name, "jobs": []})
-                lst["jobs"].append((job_name, level))
-            result = []
-            for uid, info in data.items():
-                jobs = sorted(info["jobs"], key=lambda r: (-r[1], r[0]))
-                avg = sum(l for _,l in jobs)/len(jobs)
-                result.append( (uid, info["name"], jobs, avg) )
-            result.sort(key=lambda x: (-x[3], x[0]))
-            return result
+            WHERE j.guild_id=$1
+            """, guild_id)
+        data = {}
+        for r in rows:
+            lst = data.setdefault(r["user_id"], {"name": r["dofus_name"], "jobs": []})
+            lst["jobs"].append((r["job_name"], r["level"]))
+        result = []
+        for uid, info in data.items():
+            jobs = sorted(info["jobs"], key=lambda r: (-r[1], r[0]))
+            avg = sum(l for _, l in jobs) / len(jobs)
+            result.append((uid, info["name"], jobs, avg))
+        result.sort(key=lambda x: (-x[3], x[0]))
+        return result
 
     async def get_dashboard(self, guild_id: int):
-        async with aiosqlite.connect(self.path) as db:
-            cur = await db.execute("SELECT dashboard_channel_id, dashboard_message_id FROM settings WHERE guild_id=?",
-                                   (guild_id,))
-            row = await cur.fetchone()
-            return row if row else (None, None)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("""
+            SELECT dashboard_channel_id, dashboard_message_id
+            FROM settings WHERE guild_id=$1
+            """, guild_id)
+            return (row["dashboard_channel_id"], row["dashboard_message_id"]) if row else (None, None)
 
     async def set_dashboard(self, guild_id: int, channel_id: int, message_id: int):
-        async with aiosqlite.connect(self.path) as db:
-            await db.execute("""INSERT INTO settings(guild_id,dashboard_channel_id,dashboard_message_id)
-                                VALUES(?,?,?)
-                                ON CONFLICT(guild_id) DO UPDATE SET
-                                  dashboard_channel_id=excluded.dashboard_channel_id,
-                                  dashboard_message_id=excluded.dashboard_message_id""",
-                             (guild_id,channel_id,message_id))
-            await db.commit()
+        async with self.pool.acquire() as conn:
+            await conn.execute("""
+            INSERT INTO settings(guild_id, dashboard_channel_id, dashboard_message_id)
+            VALUES($1,$2,$3)
+            ON CONFLICT (guild_id) DO UPDATE SET
+              dashboard_channel_id=EXCLUDED.dashboard_channel_id,
+              dashboard_message_id=EXCLUDED.dashboard_message_id
+            """, guild_id, channel_id, message_id)
 
 db = DB()
 
