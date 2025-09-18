@@ -147,7 +147,7 @@ db = DB()
 
 class DashboardView(discord.ui.View):
     def __init__(self, bot: commands.Bot, guild_id: int, total_pages: int, current_page: int = 0, selected_filter: str | None = None):
-        super().__init__(timeout=86400)
+        super().__init__(timeout=None)
         self.bot = bot
         self.guild_id = guild_id
         self.total_pages = max(1, total_pages)
@@ -204,7 +204,7 @@ class DashboardView(discord.ui.View):
             except Exception:
                 pass
             val = self.select.values[0]
-            self.selected_filter = None if val == "__all" else val  # val est déjà normalisée
+            self.selected_filter = None if val == "__all" else val
             self.current_page = 0
             await update_dashboard_message(self.bot, interaction.guild_id, interaction.message, self.current_page, self.selected_filter)
 
