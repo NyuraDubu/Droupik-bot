@@ -259,7 +259,8 @@ class MetiersBot(commands.Bot):
 
     async def setup_hook(self):
         await db.setup()
-        # NOTE:
+        # Enregistre la vue persistante pour que Discord route les interactions après chaque reboot
+        self.add_view(DashboardView())
 
     async def on_ready(self):
         if not self.synced:
