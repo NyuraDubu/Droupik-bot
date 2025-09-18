@@ -161,29 +161,6 @@ class DashboardView(discord.ui.View):
         self.current_page = max(0, min(current_page, self.total_pages - 1))
         self.selected_filter = selected_filter
 
-        # --- Composants avec custom_id persistants ---
-        self.prev_btn = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.secondary, custom_id="metiers:prev")
-        self.next_btn = discord.ui.Button(emoji="▶️", style=discord.ButtonStyle.secondary, custom_id="metiers:next")
-        self.refresh_btn = discord.ui.Button(emoji="🔄", style=discord.ButtonStyle.secondary, custom_id="metiers:refresh")
-        self.add_item(self.prev_btn); self.add_item(self.refresh_btn); self.add_item(self.next_btn)
-
-        options = [discord.SelectOption(label="Tous les métiers", value="__all")]
-        metiers = sorted({m for m in EMOJI_BY_METIER.keys()})
-        seen = set()
-        for m in metiers:
-            base = m.replace("û","u").replace("â","a")
-            if base in seen:
-                continue
-            seen.add(base)
-            options.append(discord.SelectOption(label=m.capitalize(), value=norm(m), emoji=EMOJI_BY_METIER.get(m,"🛠️")))
-        self.select = discord.ui.Select(
-            placeholder="Filtrer par métier…",
-            min_values=1,
-            max_values=1,
-            options=options,
-            custom_id="metiers:filter"
-        )
-        self.add_item(self.select)
 
     async def update(self, interaction: discord.Interaction, page=None, selected_filter=None):
         await interaction.response.defer()
