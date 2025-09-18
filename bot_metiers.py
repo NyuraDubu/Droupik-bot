@@ -209,7 +209,11 @@ class DashboardView(discord.ui.View):
     async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         val = select.values[0]
         log.info("Interaction SELECT filtre reçue par %s : %s", interaction.user, val)
-        await self.update(interaction, page=0, selected_filter=None if val == "__all" else val)
+        # Si "Tous les métiers" est sélectionné, on désactive le filtre (None)
+        if val == "__all":
+            await self.update(interaction, page=0, selected_filter=None)
+        else:
+            await self.update(interaction, page=0, selected_filter=val)
 
     async def on_error(self, error: Exception, item: discord.ui.Item, interaction: discord.Interaction):
         # Capture les exceptions des callbacks de boutons/select
