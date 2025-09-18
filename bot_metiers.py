@@ -185,47 +185,12 @@ class DashboardView(discord.ui.View):
         )
         self.add_item(self.select)
 
-        @self.prev_btn.callback
-        async def prev_callback(interaction: discord.Interaction):
+        async def update(interaction: discord.Interaction, page=None, selected_filter=None):
             await interaction.response.defer()
-            self.current_page = (self.current_page - 1) % self.total_pages
-            await update_dashboard_message(
-                self.bot,
-                interaction.guild or interaction.message.guild,
-                interaction.message,
-                self.current_page,
-                self.selected_filter
-            )
-
-        @self.next_btn.callback
-        async def next_callback(interaction: discord.Interaction):
-            await interaction.response.defer()
-            self.current_page = (self.current_page + 1) % self.total_pages
-            await update_dashboard_message(
-                self.bot,
-                interaction.guild or interaction.message.guild,
-                interaction.message,
-                self.current_page,
-                self.selected_filter
-            )
-
-        @self.refresh_btn.callback
-        async def refresh_callback(interaction: discord.Interaction):
-            await interaction.response.defer()
-            await update_dashboard_message(
-                self.bot,
-                interaction.guild or interaction.message.guild,
-                interaction.message,
-                self.current_page,
-                self.selected_filter
-            )
-
-        @self.select.callback
-        async def select_callback(interaction: discord.Interaction):
-            await interaction.response.defer()
-            val = self.select.values[0]
-            self.selected_filter = None if val == "__all" else val
-            self.current_page = 0
+            if page is not None:
+                self.current_page = page
+            if selected_filter is not None:
+                self.selected_filter = selected_filter
             guild = interaction.guild or interaction.message.guild
             if not guild:
                 await interaction.followup.send("Erreur : impossible de trouver la guilde.", ephemeral=True)
@@ -237,6 +202,23 @@ class DashboardView(discord.ui.View):
                 self.current_page,
                 self.selected_filter
             )
+
+        @self.prev_btn.callback
+        async def prev_callback(interaction: discord.Interaction):
+            await update(interaction, page=(self.current_page - 1) % self.total_pages)
+
+        @self.next_btn.callback
+        async def next_callback(interaction: discord.Interaction):
+            await update(interaction, page=(self.current_page + 1) % self.total_pages)
+
+        @self.refresh_btn.callback
+        async def refresh_callback(interaction: discord.Interaction):
+            await update(interaction)
+
+        @self.select.callback
+        async def select_callback(interaction: discord.Interaction):
+            val = self.select.values[0]
+            await update(interaction, page=0, selected_filter=None if val == "__all" else val)
 
     async def on_error(self, error: Exception, item: discord.ui.Item, interaction: discord.Interaction):
         # Capture les exceptions des callbacks de boutons/select
